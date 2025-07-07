@@ -10,6 +10,9 @@ import {
   Filter
 } from 'lucide-react';
 
+import { ref, onValue } from 'firebase/database';
+import { database } from '../firebase';
+
 export default function TrafficMap() {
   const [mapLayers, setMapLayers] = useState({
     traffic: true,
@@ -20,24 +23,22 @@ export default function TrafficMap() {
   });
 
   const [selectedFilter, setSelectedFilter] = useState('all');
-  const [trafficData, setTrafficData] = useState([
-    { id: 1, location: 'Main St', congestion: 85, speed: 15, type: 'heavy' },
-    { id: 2, location: 'Broadway', congestion: 45, speed: 35, type: 'moderate' },
-    { id: 3, location: 'Highway 101', congestion: 92, speed: 12, type: 'severe' },
-    { id: 4, location: 'Park Ave', congestion: 25, speed: 45, type: 'light' }
-  ]);
+  const [trafficData, setTrafficData] = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [emergencyVehicles, setEmergencyVehicles] = useState([]);
 
-  const incidents = [
-    { id: 1, type: 'accident', location: { x: 65, y: 40 }, severity: 'high', description: 'Multi-vehicle accident' },
-    { id: 2, type: 'construction', location: { x: 30, y: 60 }, severity: 'medium', description: 'Road maintenance' },
-    { id: 3, type: 'breakdown', location: { x: 80, y: 25 }, severity: 'low', description: 'Vehicle breakdown' }
-  ];
-
-  const emergencyVehicles = [
-    { id: 1, type: 'ambulance', location: { x: 45, y: 35 }, destination: 'Hospital' },
-    { id: 2, type: 'fire', location: { x: 55, y: 70 }, destination: 'Downtown' },
-    { id: 3, type: 'police', location: { x: 75, y: 45 }, destination: 'Main St' }
-  ];
+  useEffect(() => {
+    const dataRef = ref(database, 'trafficMap');
+    const unsubscribe = onValue(dataRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setTrafficData(data.trafficData || []);
+        setIncidents(data.incidents || []);
+        setEmergencyVehicles(data.emergencyVehicles || []);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const toggleLayer = (layer) => {
     setMapLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
@@ -68,41 +69,121 @@ export default function TrafficMap() {
     }
   };
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTrafficData(prev => prev.map(item => ({
-        ...item,
-        congestion: Math.max(10, Math.min(100, item.congestion + (Math.random() - 0.5) * 10)),
-        speed: Math.max(5, Math.min(60, item.speed + (Math.random() - 0.5) * 5))
-      })));
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
   const handleEmergencyControl = (type) => {
-    setTrafficData(prev =>
-      prev.map(data => {
-        if (type === 'all-stop') {
-          return { ...data, congestion: 100, speed: 0, type: 'severe' };
-        }
-
-        if (type === 'priority') {
-          return { ...data, congestion: 20, speed: 60, type: 'light' };
-        }
-
-        if (type === 'resume') {
-          return {
-            ...data,
-            congestion: Math.floor(Math.random() * 70) + 10,
-            speed: Math.floor(Math.random() * 50) + 10,
-            type: 'moderate'
-          };
-        }
-
-        return data;
-      })
-    );
+    const updated = trafficData.map(data => {
+      if (type === 'all-stop') {
+        return { ...data, congestion: 100, speed: 0, type: 'severe' };
+      }
+      if (type === 'priority') {
+        return { ...data, congestion: 20, speed: 60, type: 'light' };
+      }
+      if (type === 'resume') {
+        return {
+          ...data,
+          congestion: Math.floor(Math.random() * 70) + 10,
+          speed: Math.floor(Math.random() * 50) + 10,
+          type: 'moderate'
+        };
+      }
+      return data;
+    });
+    set(ref(database, 'trafficMap/trafficData'), updated);
   };
+
+
+  // const [mapLayers, setMapLayers] = useState({
+  //   traffic: true,
+  //   incidents: true,
+  //   cameras: false,
+  //   construction: true,
+  //   emergencyVehicles: true
+  // });
+
+  // const [selectedFilter, setSelectedFilter] = useState('all');
+  // const [trafficData, setTrafficData] = useState([
+  //   { id: 1, location: 'Main St', congestion: 85, speed: 15, type: 'heavy' },
+  //   { id: 2, location: 'Broadway', congestion: 45, speed: 35, type: 'moderate' },
+  //   { id: 3, location: 'Highway 101', congestion: 92, speed: 12, type: 'severe' },
+  //   { id: 4, location: 'Park Ave', congestion: 25, speed: 45, type: 'light' }
+  // ]);
+
+  // const incidents = [
+  //   { id: 1, type: 'accident', location: { x: 65, y: 40 }, severity: 'high', description: 'Multi-vehicle accident' },
+  //   { id: 2, type: 'construction', location: { x: 30, y: 60 }, severity: 'medium', description: 'Road maintenance' },
+  //   { id: 3, type: 'breakdown', location: { x: 80, y: 25 }, severity: 'low', description: 'Vehicle breakdown' }
+  // ];
+
+  // const emergencyVehicles = [
+  //   { id: 1, type: 'ambulance', location: { x: 45, y: 35 }, destination: 'Hospital' },
+  //   { id: 2, type: 'fire', location: { x: 55, y: 70 }, destination: 'Downtown' },
+  //   { id: 3, type: 'police', location: { x: 75, y: 45 }, destination: 'Main St' }
+  // ];
+
+  // const toggleLayer = (layer) => {
+  //   setMapLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
+  // };
+
+  // const getCongestionColor = (level) => {
+  //   if (level > 80) return 'bg-red-500';
+  //   if (level > 60) return 'bg-yellow-500';
+  //   if (level > 30) return 'bg-orange-500';
+  //   return 'bg-green-500';
+  // };
+
+  // const getIncidentIcon = (type) => {
+  //   switch (type) {
+  //     case 'accident': return AlertTriangle;
+  //     case 'construction': return Construction;
+  //     case 'breakdown': return MapPin;
+  //     default: return AlertTriangle;
+  //   }
+  // };
+
+  // const getIncidentColor = (severity) => {
+  //   switch (severity) {
+  //     case 'high': return 'text-red-600 bg-red-100';
+  //     case 'medium': return 'text-yellow-600 bg-yellow-100';
+  //     case 'low': return 'text-green-600 bg-green-100';
+  //     default: return 'text-gray-600 bg-gray-100';
+  //   }
+  // };
+
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setTrafficData(prev => prev.map(item => ({
+  //       ...item,
+  //       congestion: Math.max(10, Math.min(100, item.congestion + (Math.random() - 0.5) * 10)),
+  //       speed: Math.max(5, Math.min(60, item.speed + (Math.random() - 0.5) * 5))
+  //     })));
+  //   }, 5000);
+
+  //   return () => clearInterval(interval);
+  // }, []);
+
+  // const handleEmergencyControl = (type) => {
+  //   setTrafficData(prev =>
+  //     prev.map(data => {
+  //       if (type === 'all-stop') {
+  //         return { ...data, congestion: 100, speed: 0, type: 'severe' };
+  //       }
+
+  //       if (type === 'priority') {
+  //         return { ...data, congestion: 20, speed: 60, type: 'light' };
+  //       }
+
+  //       if (type === 'resume') {
+  //         return {
+  //           ...data,
+  //           congestion: Math.floor(Math.random() * 70) + 10,
+  //           speed: Math.floor(Math.random() * 50) + 10,
+  //           type: 'moderate'
+  //         };
+  //       }
+
+  //       return data;
+  //     })
+  //   );
+  // };
 
   return (
     <div className="p-6 space-y-6">

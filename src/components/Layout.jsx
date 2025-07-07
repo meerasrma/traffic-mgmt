@@ -12,6 +12,7 @@ export default function Layout() {
             setSystemStatus(statuses[Math.floor(Math.random() * statuses.length)]);
         }, 15000);
         return () => clearInterval(interval);
+
     }, []);
 
     return (

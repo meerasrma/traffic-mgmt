@@ -1,83 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import { TrafficCone as Traffic, Play, Pause, RotateCcw, Settings, Clock, AlertTriangle } from 'lucide-react';
+import { ref, onValue, set, update } from 'firebase/database';
+import { database } from '../firebase';
 
 export default function TrafficLights() {
-  const [intersections, setIntersections] = useState([
-    {
-      id: 1,
-      name: 'Main St & 1st Ave',
-      status: 'active',
-      currentPhase: 'green-ns',
-      timeRemaining: 45,
-      mode: 'automatic',
-      phases: ['green-ns', 'yellow-ns', 'red-ns', 'green-ew', 'yellow-ew', 'red-ew']
-    },
-    {
-      id: 2,
-      name: 'Broadway & Oak St',
-      status: 'active',
-      currentPhase: 'red-ns',
-      timeRemaining: 12,
-      mode: 'automatic',
-      phases: ['green-ns', 'yellow-ns', 'red-ns', 'green-ew', 'yellow-ew', 'red-ew']
-    },
-    {
-      id: 3,
-      name: 'Central Ave & Pine St',
-      status: 'maintenance',
-      currentPhase: 'flashing-red',
-      timeRemaining: 0,
-      mode: 'manual',
-      phases: ['green-ns', 'yellow-ns', 'red-ns', 'green-ew', 'yellow-ew', 'red-ew']
-    },
-    {
-      id: 4,
-      name: 'Harbor Rd & 3rd St',
-      status: 'active',
-      currentPhase: 'yellow-ew',
-      timeRemaining: 8,
-      mode: 'priority',
-      phases: ['green-ns', 'yellow-ns', 'red-ns', 'green-ew', 'yellow-ew', 'red-ew']
-    }
-  ]);
+  const [intersections, setIntersections] = useState([]);
 
-  const [selectedIntersection, setSelectedIntersection] = useState(null);
+  useEffect(() => {
+    const trafficRef = ref(database, 'trafficLights');
+    const unsubscribe = onValue(trafficRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const list = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
+        setIntersections(list);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setIntersections(prev => prev.map(intersection => {
-        if (intersection.status !== 'active') return intersection;
+      setIntersections(prev => {
+        const updated = prev.map(intersection => {
+          if (intersection.status !== 'active') return intersection;
 
-        let newTimeRemaining = intersection.timeRemaining - 1;
-        let newPhase = intersection.currentPhase;
+          let newTimeRemaining = intersection.timeRemaining - 1;
+          let newPhase = intersection.currentPhase;
 
-        if (newTimeRemaining <= 0) {
-          const currentIndex = intersection.phases.indexOf(intersection.currentPhase);
-          const nextIndex = (currentIndex + 1) % intersection.phases.length;
-          newPhase = intersection.phases[nextIndex];
+          if (newTimeRemaining <= 0) {
+            const currentIndex = intersection.phases.indexOf(intersection.currentPhase);
+            const nextIndex = (currentIndex + 1) % intersection.phases.length;
+            newPhase = intersection.phases[nextIndex];
+            newTimeRemaining = getPhaseTime(newPhase);
+          }
 
-          // Set new timing based on phase
-          if (newPhase.includes('green')) newTimeRemaining = 45;
-          else if (newPhase.includes('yellow')) newTimeRemaining = 8;
-          else newTimeRemaining = 30;
-        }
+          const updatedIntersection = {
+            ...intersection,
+            currentPhase: newPhase,
+            timeRemaining: newTimeRemaining,
+          };
 
-        return {
-          ...intersection,
-          currentPhase: newPhase,
-          timeRemaining: newTimeRemaining
-        };
-      }));
+          update(ref(database, `trafficLights/${intersection.id}`), updatedIntersection);
+          return updatedIntersection;
+        });
+        return updated;
+      });
     }, 1000);
-
     return () => clearInterval(interval);
   }, []);
 
-  const getPhaseColor = (phase) => {
-    if (phase.includes('green')) return 'bg-green-500';
-    if (phase.includes('yellow')) return 'bg-yellow-500';
-    if (phase.includes('red')) return 'bg-red-500';
-    return 'bg-gray-400';
+  const getPhaseTime = (phase) => {
+    if (phase.includes('green')) return 45;
+    if (phase.includes('yellow')) return 8;
+    return 30;
   };
 
   const getStatusColor = (status) => {
@@ -97,11 +72,6 @@ export default function TrafficLights() {
       default: return 'text-gray-600 bg-gray-100';
     }
   };
-  const getPhaseTime = (phase) => {
-  if (phase.includes('green')) return 45;
-  if (phase.includes('yellow')) return 8;
-  return 30;
-};
 
   const TrafficLightDisplay = ({ phase }) => {
     const isNorthSouth = phase.includes('ns');
@@ -123,51 +93,44 @@ export default function TrafficLights() {
   };
 
   const controlIntersection = (id, action) => {
-    setIntersections(prev =>
-      prev.map(intersection => {
-        if (intersection.id !== id) return intersection;
+    const intersection = intersections.find(i => i.id === id);
+    if (!intersection) return;
+    let updated = { ...intersection };
 
-        switch (action) {
-          case 'pause':
-            return {
-              ...intersection,
-              status: intersection.status === 'active' ? 'paused' : 'active',
-            };
-          case 'reset':
-            return {
-              ...intersection,
-              currentPhase: 'green-ns',
-              timeRemaining: 45,
-            };
-          case 'manual':
-            return {
-              ...intersection,
-              mode: intersection.mode === 'manual' ? 'automatic' : 'manual',
-              status: 'active', // optional: auto-resume on manual switch
-            };
-          default:
-            return intersection;
-        }
-      })
-    );
+    if (action === 'pause') {
+      updated.status = updated.status === 'active' ? 'paused' : 'active';
+    } else if (action === 'reset') {
+      updated.currentPhase = 'green-ns';
+      updated.timeRemaining = 45;
+    } else if (action === 'manual') {
+      updated.mode = updated.mode === 'manual' ? 'automatic' : 'manual';
+      updated.status = 'active';
+    }
+
+    update(ref(database, `trafficLights/${id}`), updated);
   };
+
   const handleEmergencyControl = (type) => {
-    setIntersections(prev => prev.map(intersection => {
-      if (intersection.status === 'maintenance') return intersection;
+    intersections.forEach((intersection) => {
+      if (intersection.status === 'maintenance') return;
+      const updated = { ...intersection };
 
       if (type === 'all-stop') {
-        return { ...intersection, currentPhase: 'red-ns', timeRemaining: 30 };
-      }
-      if (type === 'priority') {
-        return { ...intersection, currentPhase: 'green-ns', timeRemaining: 45 };
-      }
-      if (type === 'resume') {
-        return { ...intersection, currentPhase: 'green-ns', timeRemaining: 45, status: 'active' };
+        updated.currentPhase = 'red-ns';
+        updated.timeRemaining = 30;
+      } else if (type === 'priority') {
+        updated.currentPhase = 'green-ns';
+        updated.timeRemaining = 45;
+      } else if (type === 'resume') {
+        updated.currentPhase = 'green-ns';
+        updated.timeRemaining = 45;
+        updated.status = 'active';
       }
 
-      return intersection;
-    }));
+      update(ref(database, `trafficLights/${intersection.id}`), updated);
+    });
   };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -229,7 +192,6 @@ export default function TrafficLights() {
                 <button
                   onClick={() => controlIntersection(intersection.id, 'pause')}
                   className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                  aria-label={`${intersection.status === 'active' ? 'Pause' : 'Resume'} traffic light`}
                 >
                   {intersection.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   <span>{intersection.status === 'active' ? 'Pause' : 'Resume'}</span>
@@ -238,7 +200,6 @@ export default function TrafficLights() {
                 <button
                   onClick={() => controlIntersection(intersection.id, 'reset')}
                   className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition"
-                  aria-label="Reset traffic light"
                 >
                   <RotateCcw className="w-4 h-4" />
                   <span>Reset</span>
@@ -247,7 +208,6 @@ export default function TrafficLights() {
                 <button
                   onClick={() => controlIntersection(intersection.id, 'manual')}
                   className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-purple-600 hover:bg-purple-50 rounded-lg transition"
-                  aria-label="Toggle manual mode"
                 >
                   <Settings className="w-4 h-4" />
                   <span>{intersection.mode === 'manual' ? 'Auto' : 'Manual'}</span>
@@ -267,7 +227,6 @@ export default function TrafficLights() {
         ))}
       </div>
 
-      {/* Emergency Override Panel */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">Emergency Controls</h3>

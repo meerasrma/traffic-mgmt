@@ -10,22 +10,12 @@ import {
   MapPin,
   Users
 } from 'lucide-react';
+import { database } from '../firebase';
+import { ref, set, onValue } from 'firebase/database';
 
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState('24h');
-  const [analyticsData, setAnalyticsData] = useState({
-    trafficVolume: [65, 78, 90, 81, 56, 75, 84, 92, 88, 95, 87, 79],
-    incidentTrends: [3, 5, 2, 8, 6, 4, 7, 3, 5, 6, 4, 2],
-    responseTime: [4.2, 3.8, 5.1, 3.6, 4.5, 3.9, 4.1, 3.7, 4.3, 3.8, 4.0, 3.5],
-    peakHours: [
-      { hour: '7-8 AM', volume: 95, incidents: 3 },
-      { hour: '8-9 AM', volume: 92, incidents: 5 },
-      { hour: '5-6 PM', volume: 88, incidents: 4 },
-      { hour: '6-7 PM', volume: 85, incidents: 2 }
-    ]
-  });
-
-  const [selectedMetric, setSelectedMetric] = useState('traffic');
+  const [analyticsData, setAnalyticsData] = useState(null);
 
   const topIncidentLocations = [
     { location: 'Main St & 5th Ave', incidents: 12, change: +8 },
@@ -71,17 +61,37 @@ export default function Analytics() {
   ];
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAnalyticsData(prev => ({
-        ...prev,
-        trafficVolume: prev.trafficVolume.map(val =>
-          Math.max(30, Math.min(100, val + (Math.random() - 0.5) * 5))
-        )
-      }));
-    }, 5000);
+  const analyticsRef = ref(database, 'analytics');
+  const unsubscribe = onValue(analyticsRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      setAnalyticsData(data);
+    }
+  });
 
-    return () => clearInterval(interval);
-  }, []);
+  return () => unsubscribe();
+}, []);
+
+if (!analyticsData) {
+  return (
+    <div className="p-6 text-center text-gray-500">
+      Loading traffic analytics...
+    </div>
+  );
+}
+
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setAnalyticsData(prev => ({
+  //       ...prev,
+  //       trafficVolume: prev.trafficVolume.map(val =>
+  //         Math.max(30, Math.min(100, val + (Math.random() - 0.5) * 5))
+  //       )
+  //     }));
+  //   }, 5000);
+
+  //   return () => clearInterval(interval);
+  // }, []);
 
   const MetricCard = ({ title, value, unit, change, icon: Icon, color }) => {
     const colorClasses = {

@@ -1,43 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { TrafficCone as Traffic, AlertTriangle, Clock, Users, TrendingUp, TrendingDown, MapPin, Zap, Activity } from 'lucide-react';
+import { ref, onValue } from 'firebase/database';
+import { database } from '../firebase';
+import {
+  TrafficCone as Traffic,
+  AlertTriangle,
+  Clock,
+  Users,
+  TrendingUp,
+  TrendingDown,
+  MapPin,
+  Zap,
+  Activity
+} from 'lucide-react';
+
+
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({
-    activeIntersections: 156,
-    totalIncidents: 12,
-    avgResponseTime: 4.2,
-    trafficFlow: 87,
-    emergencyVehicles: 3,
-    systemLoad: 65
-  });
+  
+  const [stats, setStats] = useState(null);
+  const [recentIncidents, setRecentIncidents] = useState([]);
+  const [intersectionStatus, setIntersectionStatus] = useState([]);
 
-  const [recentIncidents, setRecentIncidents] = useState([
-    { id: 1, location: 'Main St & 5th Ave', type: 'Accident', time: '2 min ago', severity: 'high' },
-    { id: 2, location: 'Highway 101 Exit 12', type: 'Traffic Jam', time: '8 min ago', severity: 'medium' },
-    { id: 3, location: 'Downtown Plaza', type: 'Road Work', time: '15 min ago', severity: 'low' },
-    { id: 4, location: 'Bridge St Overpass', type: 'Vehicle Breakdown', time: '23 min ago', severity: 'medium' }
-  ]);
-
-  const [intersectionStatus, setIntersectionStatus] = useState([
-    { id: 1, name: 'Main & 1st', status: 'operational', flow: 95 },
-    { id: 2, name: 'Broadway & Oak', status: 'warning', flow: 67 },
-    { id: 3, name: 'Central & Pine', status: 'operational', flow: 88 },
-    { id: 4, name: 'Harbor & 3rd', status: 'maintenance', flow: 0 },
-    { id: 5, name: 'Park Ave & Elm', status: 'operational', flow: 92 }
-  ]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStats(prev => ({
-        ...prev,
-        trafficFlow: Math.max(60, Math.min(100, prev.trafficFlow + (Math.random() - 0.5) * 10)),
-        systemLoad: Math.max(40, Math.min(90, prev.systemLoad + (Math.random() - 0.5) * 8)),
-        avgResponseTime: Math.max(2, Math.min(8, prev.avgResponseTime + (Math.random() - 0.5) * 0.5))
-      }));
-    }, 3000);
+    const statsRef = ref(database, 'dashboardStats');
+    const incidentsRef = ref(database, 'recentIncidents');
+    const intersectionsRef = ref(database, 'intersectionStatus');
 
-    return () => clearInterval(interval);
+    const unsubscribeStats = onValue(statsRef, (snapshot) => {
+      setStats(snapshot.val() || {});
+    });
+
+    const unsubscribeIncidents = onValue(incidentsRef, (snapshot) => {
+      const data = snapshot.val();
+      setRecentIncidents(data ? Object.values(data) : []);
+    });
+
+    const unsubscribeIntersections = onValue(intersectionsRef, (snapshot) => {
+      const data = snapshot.val();
+      setIntersectionStatus(data ? Object.values(data) : []);
+    });
+
+    return () => {
+      unsubscribeStats();
+      unsubscribeIncidents();
+      unsubscribeIntersections();
+    };
   }, []);
+
+  if (!stats) {
+    return (
+      <div className="flex justify-center items-center min-h-screen text-gray-600">
+        <div className="text-center space-y-2">
+          <p className="text-xl font-medium">Loading Dashboard...</p>
+          <p className="text-sm">Fetching real-time traffic data from Firebase</p>
+        </div>
+      </div>
+    );
+  }
 
   const StatCard = ({ title, value, unit, icon: Icon, trend, color = 'blue' }) => {
     const colorClasses = {

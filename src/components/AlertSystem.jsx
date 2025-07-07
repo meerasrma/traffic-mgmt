@@ -12,61 +12,11 @@ import {
   Filter,
   Plus
 } from 'lucide-react';
+import { database } from '../firebase';
+import { ref, onValue, update, remove, set } from 'firebase/database';
 
 export default function AlertSystem() {
-  const [alerts, setAlerts] = useState([
-    {
-      id: 1,
-      type: 'critical',
-      title: 'Major Traffic Incident',
-      message: 'Multi-vehicle accident on Main St causing severe delays',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
-      read: false,
-      acknowledged: false,
-      source: 'Traffic Cameras'
-    },
-    {
-      id: 2,
-      type: 'warning',
-      title: 'High Traffic Volume',
-      message: 'Unusual traffic congestion detected on Highway 101',
-      timestamp: new Date(Date.now() - 1000 * 60 * 15),
-      read: true,
-      acknowledged: true,
-      source: 'Traffic Sensors'
-    },
-    {
-      id: 3,
-      type: 'info',
-      title: 'System Maintenance',
-      message: 'Routine maintenance scheduled for tonight 2-4 AM',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
-      read: true,
-      acknowledged: false,
-      source: 'System Admin'
-    },
-    {
-      id: 4,
-      type: 'success',
-      title: 'Incident Resolved',
-      message: 'Vehicle breakdown on Bridge St has been cleared',
-      timestamp: new Date(Date.now() - 1000 * 60 * 45),
-      read: false,
-      acknowledged: false,
-      source: 'Response Team'
-    },
-    {
-      id: 5,
-      type: 'critical',
-      title: 'Emergency Vehicle Priority',
-      message: 'Ambulance requires priority route clearance to hospital',
-      timestamp: new Date(Date.now() - 1000 * 60 * 2),
-      read: false,
-      acknowledged: false,
-      source: 'Emergency Dispatch'
-    }
-  ]);
-
+  const [alerts, setAlerts] = useState([]);
   const [filter, setFilter] = useState('all');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -76,6 +26,51 @@ export default function AlertSystem() {
     warning: { enabled: true, sound: true, email: true, sms: false },
     info: { enabled: true, sound: false, email: true, sms: false },
     success: { enabled: true, sound: false, email: false, sms: false }
+  };
+
+  useEffect(() => {
+    const alertsRef = ref(database, 'alerts');
+    onValue(alertsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const parsed = Object.entries(data).map(([id, alert]) => ({
+          id,
+          ...alert,
+          timestamp: new Date(alert.timestamp)
+        }));
+        setAlerts(parsed);
+      }
+    });
+  }, []);
+
+  const markAsRead = async (id) => {
+    const alertRef = ref(database, `alerts/${id}`);
+    await update(alertRef, { read: true });
+  };
+
+  const markAsAcknowledged = async (id) => {
+    const alertRef = ref(database, `alerts/${id}`);
+    await update(alertRef, { acknowledged: true, read: true });
+  };
+
+  const dismissAlert = async (id) => {
+    const alertRef = ref(database, `alerts/${id}`);
+    await remove(alertRef);
+  };
+
+  const filteredAlerts = alerts.filter(alert => {
+    if (filter === 'all') return true;
+    if (filter === 'unread') return !alert.read;
+    if (filter === 'unacknowledged') return !alert.acknowledged;
+    return alert.type === filter;
+  });
+
+  const formatTimeAgo = (date) => {
+    const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
   };
 
   const getAlertIcon = (type) => {
@@ -98,36 +93,6 @@ export default function AlertSystem() {
     }
   };
 
-  const markAsRead = (id) => {
-    setAlerts(prev => prev.map(alert =>
-      alert.id === id ? { ...alert, read: true } : alert
-    ));
-  };
-
-  const markAsAcknowledged = (id) => {
-    setAlerts(prev => prev.map(alert =>
-      alert.id === id ? { ...alert, acknowledged: true, read: true } : alert
-    ));
-  };
-
-  const dismissAlert = (id) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== id));
-  };
-
-  const filteredAlerts = alerts.filter(alert => {
-    if (filter === 'all') return true;
-    if (filter === 'unread') return !alert.read;
-    if (filter === 'unacknowledged') return !alert.acknowledged;
-    return alert.type === filter;
-  });
-
-  const formatTimeAgo = (date) => {
-    const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes} min ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  };
 
   const AlertCard = ({ alert }) => {
     const Icon = getAlertIcon(alert.type);
